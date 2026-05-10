@@ -133,7 +133,7 @@ ollama pull mxbai-embed-large
 ### 1. Clonar el repositorio
 
 ```bash
-git clone https://github.com/tu-usuario/robotstudio-command-center.git
+git clone https://github.com/marcohdeztrujillo09/Agente-de-IA-con-RobotStudio
 cd robotstudio-command-center
 ```
 
