@@ -1,0 +1,202 @@
+MODOS DE OPERACIÓN DEL ROBOT ABB - SISTEMA DE CLASIFICACIÓN Y APILADO
+
+=======================================================================
+DESCRIPCIÓN GENERAL DEL SISTEMA
+=======================================================================
+
+El sistema consiste en un brazo robótico ABB con ventosa de succión montado sobre una base central, flanqueado por una cinta transportadora de entrada (a la izquierda del robot desde su perspectiva), una zona de apilado central (frente al robot), una mesa de descarga con caja pequeña (a la izquierda del robot) y una mesa de descarga con caja grande (a la derecha del robot). El robot opera en tres modos principales: Pick and Place, Modo Apilado y Reposo/Paro.
+
+=======================================================================
+PARÁMETRO: VELOCIDAD
+=======================================================================
+
+La velocidad hace referencia a la velocidad lineal del TCP (Tool Center Point) del robot, es decir, la velocidad a la que se mueve el extremo del brazo robótico con la ventosa. 
+
+- La velocidad se configura en mm/s (milímetros por segundo).
+- El valor nominal por defecto es de 500 mm/s, aunque puede modificarse.
+- En el código RAPID, la velocidad está definida como un speeddata: [v_tcp, v_ori, v_leax, v_reax], donde el primer valor es la velocidad TCP que el usuario puede ajustar.
+- La velocidad afecta a todos los movimientos del robot (MoveJ y MoveL), tanto en recogida como en descarga de piezas.
+- Aumentar la velocidad hace que el robot complete los ciclos más rápido, pero puede reducir la precisión en las paradas finas (zona "fine").
+- Reducir la velocidad mejora la suavidad del movimiento y la seguridad, especialmente en entornos con operarios cerca.
+- El parámetro de velocidad se puede cambiar en tiempo de ejecución desde la interfaz del Command Center o a través del teach pendant del robot.
+- Velocidades recomendadas: entre 200 mm/s y 1000 mm/s según la aplicación.
+
+Sinónimos y formas en las que el usuario puede preguntar sobre velocidad:
+- "velocidad del robot", "vel", "velocidad nominal", "a qué velocidad va", "cambiar velocidad", "aumentar velocidad", "reducir velocidad", "velocidad de operación", "qué velocidad tiene", "velocidad mm/s".
+
+=======================================================================
+PARÁMETRO: CAPACIDAD MÁXIMA DE APILADO
+=======================================================================
+
+La capacidad máxima de apilado define cuántas cajas pequeñas puede apilar el robot en la zona de apilado antes de detenerse y esperar confirmación del operario.
+
+- El valor máximo absoluto del sistema es de 8 cajas apiladas.
+- Por defecto, el sistema está configurado con un máximo de 7 unidades, aunque este valor puede ajustarse.
+- El número de cajas apiladas se controla mediante un contador interno (contadorPiezas) que se incrementa con cada apilado y se decrementa con cada desapilado.
+- Cada caja se coloca en una posición vertical diferente dentro de la zona de apilado, desde la más baja (Target_90, a 50 mm) hasta la más alta (Target_220, a 400 mm), en incrementos de 50 mm.
+- Cuando el contador alcanza el valor máximo configurado (maximoPiezas), el robot termina el ciclo de apilado actual, vuelve a la posición de reposo (Target_20 sobre la cinta transportadora) y activa una señal de alerta (Alerta=1).
+- El robot entonces queda en espera hasta que el operario pulsa el botón físico "PulsadorReanudar" o hace clic en "REANUDAR" desde la interfaz del Command Center.
+
+Sinónimos y formas en las que el usuario puede preguntar:
+- "cuántas cajas puede apilar", "máximo de piezas", "capacidad de apilado", "máximo apilado", "cuántas unidades apila", "limite de cajas", "máximo de cajas", "cuántas caben en la pila".
+
+=======================================================================
+MODO: PICK AND PLACE
+=======================================================================
+
+El modo Pick and Place es el modo de operación estándar del robot. En este modo, el robot clasifica y transporta cajas según su tamaño desde la cinta transportadora hacia las mesas de descarga correspondientes, sin apilar.
+
+Funcionamiento detallado:
+
+1. DETECCIÓN DE CAJA PEQUEÑA (naranja):
+   - El sensor I_CajaPequeñaa detecta la presencia de una caja pequeña en la cinta.
+   - El robot se desplaza desde su posición de espera (Target_20) hacia la posición alta sobre la cinta (Target_CajaAlta_10) y luego baja hasta la posición de recogida (Target_CajaBaja_10).
+   - Activa la ventosa (Q_ventosa=1) para sujetar la caja.
+   - Eleva la caja y la transporta hasta la mesa de descarga izquierda (Workobject_Mesa1).
+   - Abre la caja de descarga pequeña (PulseDO Q_abrircajapequeña), deposita la pieza desactivando la ventosa (Q_ventosa=0), y cierra la caja (PulseDO Q_cerrarcajapequeña).
+   - El robot regresa a la posición de espera.
+
+2. DETECCIÓN DE CAJA GRANDE (verde):
+   - Los sensores I_CajaGrandee e I_CajaPequeñaa detectan simultáneamente la presencia de una caja grande.
+   - El robot baja directamente hasta la posición alta sobre la cinta (Target_CajaAlta_10), activa la ventosa y recoge la caja grande sin necesidad de bajar más.
+   - Transporta la caja hasta la mesa de descarga derecha (Workobject_Mesa2).
+   - Abre la caja grande de descarga (PulseDO Q_abrircajagrande), deposita la pieza y cierra la caja (PulseDO Q_cerrarcajagrande).
+   - El robot regresa a la posición de espera.
+
+Resumen de destinos en Pick and Place:
+- Cajas pequeñas (naranjas) → Mesa izquierda del robot (caja pequeña de descarga).
+- Cajas grandes (verdes) → Mesa derecha del robot (caja grande de descarga).
+
+Condición para activar este modo:
+- El interruptor de modo apilado (interuptorEstado) debe estar en posición 0 (desactivado).
+- No debe haber una caja grande detectada junto a la pequeña (para el proceso de caja pequeña).
+
+Sinónimos y formas en las que el usuario puede preguntar:
+- "pick and place", "modo normal", "modo clasificación", "clasificar cajas", "separar cajas", "caja verde a la derecha", "caja naranja a la izquierda", "modo transporte", "modo estándar".
+
+=======================================================================
+MODO: APILADO (APILAR)
+=======================================================================
+
+El modo Apilado permite al robot acumular cajas pequeñas en una zona específica (pila), en lugar de depositarlas directamente en la mesa de descarga. Este modo es útil cuando se quiere acumular un lote de cajas antes de procesarlas o enviarlas.
+
+Condición de activación:
+- El interruptor de modo (interuptorEstado) debe estar en posición 1 (activado).
+- La variable bloqueoDesapilar debe estar en FALSE (es decir, aún no se ha completado la pila).
+- Debe haber una caja pequeña detectada en la cinta (I_CajaPequeñaa=1 y I_CajaGrandee=0).
+
+Funcionamiento detallado del proceso de apilado:
+
+1. El robot recoge la caja pequeña de la cinta transportadora (misma recogida que en Pick and Place).
+2. Se desplaza a la zona de apilado (Workobject_Apilar), posicionándose primero en el punto de aproximación alto (Target_130, a 425 mm de altura).
+3. Según el valor del contador de piezas (contadorPiezas), el robot deposita la caja en la altura correspondiente:
+   - Pieza 0 → Target_90 (50 mm)
+   - Pieza 1 → Target_100 (100 mm)
+   - Pieza 2 → Target_110 (150 mm)
+   - Pieza 3 → Target_120 (200 mm)
+   - Pieza 4 → Target_190 (250 mm)
+   - Pieza 5 → Target_200 (300 mm)
+   - Pieza 6 → Target_210 (350 mm)
+   - Pieza 7 → Target_220 (400 mm)
+4. La ventosa se desactiva (Q_ventosa=0) para soltar la caja en la posición correcta.
+5. El contador se incrementa en 1.
+6. El robot regresa al punto de aproximación alto y vuelve a la posición de espera sobre la cinta.
+
+Cuando se alcanza el máximo de piezas configurado (por defecto 7, máximo 8):
+- El robot termina el ciclo actual, vuelve a la posición de espera (Target_20 sobre la cinta).
+- Se activa la señal de alerta (Alerta=1) y el robot muestra el mensaje "Reanudar Robot" en el teach pendant.
+- El robot queda bloqueado esperando que el operario pulse el botón de Reanudar (físico o desde la interfaz).
+
+Sinónimos y formas en las que el usuario puede preguntar:
+- "modo apilar", "apilar cajas", "acumular piezas", "modo apilado", "ponte a apilar", "quiero que apile", "activar apilado", "apilar".
+
+=======================================================================
+ACCIÓN: REANUDAR
+=======================================================================
+
+La acción Reanudar se utiliza exclusivamente después de que el robot ha completado la pila máxima en modo Apilado. No es un modo en sí mismo, sino una confirmación del operario que desencadena el inicio del proceso de Desapilado.
+
+Funcionamiento:
+
+1. Una vez que el robot ha apilado el número máximo de cajas configurado, se detiene en la posición de reposo y activa la alerta.
+2. El operario debe pulsar "REANUDAR" (desde la interfaz o el pulsador físico PulsadorReanudar).
+3. Al reanudar, el sistema lee el estado del selector CajaOCinta para determinar el destino del desapilado:
+   - Si CajaOCinta = 1 → las cajas desapiladas irán a la cinta de descarga (Workobject_CintaDescarga, a la derecha del robot).
+   - Si CajaOCinta = 0 → las cajas desapiladas irán a la caja pequeña de la mesa izquierda (Workobject_Mesa1).
+4. Se activa la variable bloqueoDesapilar = TRUE, lo que hace que en el siguiente ciclo el robot entre en modo Desapilado en lugar de continuar apilando.
+5. Se desactiva la señal de alerta (Alerta=0).
+
+Importante: El botón Reanudar solo tiene efecto cuando el robot está esperando tras completar la pila. En cualquier otro momento no realiza ninguna acción.
+
+Sinónimos y formas en las que el usuario puede preguntar:
+- "reanudar", "continuar", "reanudar operación", "seguir", "el robot está parado esperando", "ya pulsé reanudar", "qué hace reanudar", "para qué sirve reanudar".
+
+=======================================================================
+MODO: DESAPILADO (DESAPILAR)
+=======================================================================
+
+El modo Desapilado se activa automáticamente después de que el operario pulsa Reanudar. El robot comienza a deshacer la pila acumulada, cogiendo las cajas de arriba hacia abajo y llevándolas al destino configurado.
+
+Condición de activación:
+- El interruptor de modo (interuptorEstado) debe estar en posición 1.
+- La variable bloqueoDesapilar debe estar en TRUE (se activó al pulsar Reanudar).
+- Debe haber una caja detectada (señal de entrada activa).
+
+Funcionamiento detallado:
+
+1. El robot va a la zona de apilado (Target_130) y baja a la posición más alta ocupada según el contador actual.
+2. Activa la ventosa para coger la caja más alta de la pila.
+3. Según el destino configurado (CajaOCinta):
+   - Destino CINTA (caja_o_cinta=TRUE): El robot lleva la caja a la cinta de descarga lateral (Target_150 → Target_140) y la deposita allí.
+   - Destino CAJA (caja_o_cinta=FALSE): El robot lleva la caja hasta la mesa izquierda (Target_50 → Target_40 → Target_30), abre la caja pequeña, deposita la pieza y cierra la caja.
+4. El contador de piezas se decrementa en 1.
+5. Cuando el contador llega a 0, la pila está vacía:
+   - La variable bloqueoDesapilar vuelve a FALSE.
+   - El robot puede volver a entrar en modo Apilado en el siguiente ciclo.
+
+Sinónimos y formas en las que el usuario puede preguntar:
+- "desapilar", "modo desapilado", "vaciar la pila", "deshacer la pila", "sacar cajas de la pila", "quitar cajas apiladas".
+
+=======================================================================
+MODO: REPOSO / PARO
+=======================================================================
+
+El modo Reposo y el Paro son funcionalmente equivalentes: ambos llevan al robot a una posición segura de espera y detienen toda operación hasta que se ordene continuar.
+
+Funcionamiento:
+
+1. Se activa la señal digital de salida modo_reposo (DO).
+2. El robot termina el movimiento en curso y se desplaza a la posición de reposo definida: Target_20, que está sobre la cinta transportadora a una altura segura (225 mm).
+3. El robot queda detenido en esa posición esperando.
+4. En la pantalla del teach pendant se muestra el mensaje "Pulse Marcha para iniciar".
+5. Para salir del reposo, el operario debe pulsar el botón de Marcha (marca_marcha=1) o la tecla habilitada (Tecla=1).
+6. Una vez pulsado, la señal modo_reposo se resetea a 0 y el robot retoma la operación en el modo que tenía configurado.
+
+Diferencia entre Reposo y Paro:
+- Desde el punto de vista del programa RAPID, ambos tienen el mismo efecto: llevan el robot a Target_20 y esperan confirmación.
+- Desde la interfaz del Command Center, el botón "PARO / REPOSO" envía el comando de detención y el robot responde "OK → robot enviado a reposo".
+- El estado de ejecución mostrado en la telemetría de la interfaz pasará a "Reposo".
+
+Casos de uso del Reposo / Paro:
+- Parar el robot de forma segura durante una pausa del operario.
+- Detener la operación ante una incidencia o para cambiar configuración.
+- Estado inicial del sistema al arrancar antes de pulsar Marcha.
+
+Sinónimos y formas en las que el usuario puede preguntar:
+- "parar", "paro", "reposo", "detener robot", "parar robot", "modo reposo", "poner en reposo", "detener", "stop", "para el robot", "robot parado", "estado reposo".
+
+=======================================================================
+RESUMEN DE MODOS Y COMANDOS
+=======================================================================
+
+| Comando / Modo       | Efecto principal                                              |
+|----------------------|---------------------------------------------------------------|
+| Pick and Place       | Clasifica cajas: naranjas a la izquierda, verdes a la derecha |
+| Modo Apilado         | Apila cajas pequeñas hasta el máximo configurado              |
+| Reanudar             | Inicia el desapilado tras completar la pila                   |
+| Desapilado           | Vacía la pila llevando cajas a cinta o caja de descarga       |
+| Reposo / Paro        | Lleva el robot a posición segura y espera orden de marcha     |
+| Velocidad            | Ajusta la velocidad TCP del robot en mm/s                     |
+| Capacidad máxima     | Número máximo de cajas a apilar (máx. absoluto: 8 uds)        |
+
+=======================================================================

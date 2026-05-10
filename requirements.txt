@@ -1,0 +1,20 @@
+# Servidor Web y API
+fastapi
+uvicorn
+pydantic
+
+# Agente y Orquestación de IA
+langchain
+langchain-community
+langchain-ollama
+langchain-chroma
+langchain-core
+langgraph
+
+# Integración MCP y Comunicación
+mcp
+langchain-mcp-adapters
+requests
+
+# Procesamiento de Documentos
+pypdf
