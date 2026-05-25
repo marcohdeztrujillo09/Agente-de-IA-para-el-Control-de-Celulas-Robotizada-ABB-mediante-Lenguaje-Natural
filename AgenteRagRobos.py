@@ -21,10 +21,10 @@ def cargar_y_dividir_documentos(rutas_archivos: list):
     """Carga archivos usando rutas absolutas y divide en fragmentos más grandes para no cortar targets."""
     todos_los_documentos = []
     directorio_actual = os.path.dirname(os.path.abspath(__file__))
-    
+
     for nombre_archivo in rutas_archivos:
         ruta_absoluta = os.path.join(directorio_actual, nombre_archivo)
-        
+
         if os.path.exists(ruta_absoluta):
             print(f"[ÉXITO] Cargando información de: {ruta_absoluta}")
             loader = TextLoader(ruta_absoluta, encoding='utf-8')
@@ -36,9 +36,9 @@ def cargar_y_dividir_documentos(rutas_archivos: list):
         print("[ALERTA] La base de datos estará vacía.")
         return []
 
-    # Reducimos chunk_size a 400 porque mxbai-embed-large tiene un límite de contexto estricto.
+    # Chunk_size a 400 caracteres lo puse porque "mxbai-embed-large" prefiere textos cortos para ser más preciso
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=400, 
+        chunk_size=400,
         chunk_overlap=50,
         separators=["\n\n", "\n", ".", " ", ""]
     )
@@ -67,41 +67,75 @@ def crear_o_cargar_vectorstore(embeddings):
 
 
 @tool
-def buscar_info_manual(consulta: str) -> str:
-    """Busca información técnica en el manual de RobotStudio ABB.
-    Úsala para dudas sobre sensores, señales (CajaOCinta), targets o modos.
+def buscar_modos_celula(consulta: str) -> str:
+    """Busca información sobre los modos de operación de la célula robotizada ABB.
+    USA ESTA HERRAMIENTA para responder preguntas sobre:
+    - Modos de operación: pick and place, apilar, desapilar, reposo.
+    - Targets, sensores, señales (CajaOCinta, interuptorEstado, Alerta, etc.).
+    - Parámetros: velocidad, maximoPiezas, contadorPiezas.
+    - Comportamiento del robot en la célula: qué hace en cada modo, destinos, lógica.
     """
     embeddings = OllamaEmbeddings(
         model="mxbai-embed-large:latest", base_url="http://localhost:11434")
     vectorstore = Chroma(persist_directory=CHROMA_DIR,
                          embedding_function=embeddings, collection_name=COLLECTION_NAME)
 
-    # Aumentamos k para dar más contexto y usamos búsqueda por similitud simple para mayor precisión directa
     resultados = vectorstore.search(
         consulta,
         search_type="similarity",
-        k=15
+        k=8
+    )
+
+    if not resultados:
+        return "No se encontró información sobre ese modo o parámetro de la célula."
+
+    # Filtramos preferentemente los fragmentos de modos.txt
+    modos_results = [doc for doc in resultados if "modos" in doc.metadata.get('source', '').lower()]
+    otros_results = [doc for doc in resultados if "modos" not in doc.metadata.get('source', '').lower()]
+    ordenados = modos_results + otros_results
+
+    print(f"\n[RAG DEBUG] buscar_modos_celula: {len(ordenados)} fragmentos para '{consulta}'")
+    texto_final = "\n".join(
+        [f"[Fuente: {os.path.basename(doc.metadata.get('source', 'desconocido'))}] {doc.page_content}" for doc in ordenados[:6]])
+    return texto_final
+
+
+@tool
+def buscar_info_manual(consulta: str) -> str:
+    """Busca información técnica genérica en el manual de RobotStudio ABB.
+    USA ESTA HERRAMIENTA para responder preguntas sobre:
+    - Cómo usar RobotStudio: crear señales, workobjects, configurar el controlador.
+    - Conceptos generales de ABB: RAPID, FlexPendant, módulos, tareas.
+    - Procedimientos de programación o configuración del entorno de simulación.
+    NO la uses para preguntas sobre los modos de la célula (usa buscar_modos_celula).
+    """
+    embeddings = OllamaEmbeddings(
+        model="mxbai-embed-large:latest", base_url="http://localhost:11434")
+    vectorstore = Chroma(persist_directory=CHROMA_DIR,
+                         embedding_function=embeddings, collection_name=COLLECTION_NAME)
+
+    resultados = vectorstore.search(
+        consulta,
+        search_type="similarity",
+        k=8
     )
 
     if not resultados:
         return "No se encontró información relevante en el manual."
 
-    print(f"\n[RAG DEBUG] Fragmentos recuperados para '{consulta}': {len(resultados)}")
-    
-    # Añadimos el nombre del archivo de origen para que el LLM sepa si es de modos.txt o manual.txt
-    texto_final = "\n".join([f"[Fuente: {os.path.basename(doc.metadata.get('source', 'desconocido'))}] - {doc.page_content}" for doc in resultados])
+    # Filtramos preferentemente los fragmentos de manual.txt
+    manual_results = [doc for doc in resultados if "manual" in doc.metadata.get('source', '').lower()]
+    otros_results = [doc for doc in resultados if "manual" not in doc.metadata.get('source', '').lower()]
+    ordenados = manual_results + otros_results
+
+    print(f"\n[RAG DEBUG] buscar_info_manual: {len(ordenados)} fragmentos para '{consulta}'")
+    texto_final = "\n".join(
+        [f"[Fuente: {os.path.basename(doc.metadata.get('source', 'desconocido'))}] {doc.page_content}" for doc in ordenados[:6]])
     return texto_final
 
 
 async def main():
-    directorio_actual = os.path.dirname(os.path.abspath(__file__))
-    ruta_modos = os.path.join(directorio_actual, "modos.txt")
-    try:
-        with open(ruta_modos, "r", encoding="utf-8") as f:
-            modos_content = f.read()
-    except Exception:
-        modos_content = "(No se pudo cargar modos.txt)"
-
+    # Se inicializa el vectorstore RAG (modos.txt + manual.txt indexados en Chroma)
     embeddings = OllamaEmbeddings(
         model="mxbai-embed-large:latest", base_url="http://localhost:11434")
     crear_o_cargar_vectorstore(embeddings)
@@ -109,7 +143,8 @@ async def main():
     # Reintentos para el cliente MCP (por si el servidor aún está arrancando)
     client = None
     mcp_tools = []
-    
+
+    # protocolo de comunicación entre robot y agente
     print("[INFO] Conectando con el servidor MCP...")
     for i in range(5):
         try:
@@ -117,7 +152,8 @@ async def main():
                 {"robot": {"transport": "sse", "url": "http://localhost:8000/sse"}}
             )
             mcp_tools = await client.get_tools()
-            print(f"[ÉXITO] MCP conectado. Herramientas encontradas: {len(mcp_tools)}")
+            print(
+                f"[ÉXITO] MCP conectado. Herramientas encontradas: {len(mcp_tools)}")
             break
         except Exception as e:
             print(f"[REINTENTO {i+1}/5] Error conectando a MCP: {e}")
@@ -125,70 +161,64 @@ async def main():
                 await asyncio.sleep(2)
             else:
                 print("[ERROR CRÍTICO] No se pudo conectar con el servidor MCP.")
-                # No salimos, intentamos seguir solo con el RAG si es posible, 
+                # No salimos, intentamos seguir solo con el RAG si es posible,
                 # o el agente fallará más tarde al inicializarse.
-    
-    todas_las_tools = mcp_tools + [buscar_info_manual]
+
+    todas_las_tools = mcp_tools + [buscar_modos_celula, buscar_info_manual]
+
+    SYSTEM_PROMPT = """
+Eres el sistema de control de una celula robotizada ABB con RobotStudio. Recibes ordenes del operario y las ejecutas usando las herramientas disponibles.
+
+== REGLA ABSOLUTA DE FORMATO ==
+TEXTO PLANO UNICAMENTE. Prohibido emojis, exclamaciones (!), emoticones o cualquier simbolo grafico.
+Prohibido mencionar nombres de herramientas internas al usuario.
+Responde siempre en espanol.
+
+== CLASIFICACION DE MENSAJES ==
+
+TIPO A - ORDEN DE CONTROL (actua de inmediato con la herramienta correcta):
+- "pick and place" | "modo pick" | "iniciar pick" | "modo clasificacion" -> llama a iniciar_robot(modo="pick")
+- "apilar" | "modo apilar" | "modo apilado" | "iniciar apilar" -> llama a iniciar_robot(modo="apilar")
+- "reposo" | "parar" | "stop" | "detener" | "paro" -> llama a volver_reposo()
+- "reanudar" | "continuar" | "seguir" -> llama a activar_reanudar()
+- "velocidad a X" | "pon velocidad X" | "cambia velocidad a X" -> llama a cambiar_velocidad_robot(X)
+- "maximo X" | "maximo piezas X" | "cambia maximo a X" -> llama a cambiar_maximo_piezas(X)
+
+TIPO B - CONSULTA SOBRE LA CELULA (usa buscar_modos_celula):
+- Preguntas sobre que hace cada modo, targets, sensores, senales, parametros de la celula.
+- Ejemplos: "que hace el modo apilar", "donde va la caja naranja", "que es Target_90".
+
+TIPO C - CONSULTA TECNICA DE ROBOTSTUDIO (usa buscar_info_manual):
+- Preguntas sobre como usar RobotStudio, RAPID, configuracion del entorno.
+- Ejemplos: "como creo una senal", "que es un workobject".
+
+== REGLA CRITICA: ORDENES DIRECTAS ==
+Si el mensaje es un nombre de modo o accion directa SIN signos de pregunta, es SIEMPRE una ORDEN.
+Ejemplos de ordenes directas: "pick and place", "apilar", "reposo", "parar", "reanudar".
+Antes de responder con texto, ejecuta SIEMPRE la herramienta correspondiente.
+
+== REGLA CRITICA: PREGUNTAS ==
+Si el mensaje contiene "?", "como", "que", "explica", "dime" -> es una CONSULTA.
+En consultas: NUNCA ejecutes herramientas de control del robot (iniciar_robot, volver_reposo, activar_reanudar).
+Usa solo las herramientas RAG (buscar_modos_celula o buscar_info_manual) para obtener informacion.
+
+== FORMATO DE RESPUESTA ==
+- Tras ejecutar una herramienta de control: confirma brevemente la accion realizada (1-2 lineas).
+- Tras consultar el RAG: responde de forma tecnica y concisa con la informacion obtenida.
+- Si no encuentras informacion: indica que no consta en el sistema.
+- NUNCA devuelvas una respuesta vacia. Si no hay nada que decir, confirma el estado actual.
+"""
 
     agente = create_agent(
         model=ChatOllama(
             model="qwen3:latest",
-            base_url="http://localhost:11434", 
+            base_url="http://localhost:11434",
             temperature=0,
+            num_ctx=8192,
         ),
         tools=todas_las_tools,
         checkpointer=InMemorySaver(),
-        system_prompt=f"""
-        Eres el Controlador Avanzado de una célula robotizada ABB con RobotStudio. Tu misión es actuar como el puente entre el lenguaje natural del usuario y las herramientas técnicas del sistema.
-
-        ¡¡¡REGLA CERO!!!: 
-        ESTA ESTRICTAMENTE PROHIBIDO EL USO DE EMOJIS, EMOTICONOS O SIMBOLOS GRAFICOS. 
-        TUS RESPUESTAS DEBEN SER 100% TEXTO PLANO. CERO EMOJIS. NINGUN CARACTER UNICODE DE EMOJI.
-
-        REGLAS DE ORO DE PENSAMIENTO:
-        1. LÓGICA DE LA CÉLULA (SAGRADA): Al final de este prompt tienes el contenido exacto de "modos.txt". Usa ESTA información para cualquier pregunta sobre "modo apilar", "targets", "piezas", "sensores de caja", y el comportamiento del robot en la célula. NO uses herramientas para buscar esto, ya lo tienes en tu memoria.
-        2. MANUAL GENÉRICO (RAG): Si te preguntan por cómo funciona RobotStudio en general (crear señales, atajos), usa la herramienta `buscar_info_manual` para buscar en "manual.txt".
-        3. SIN ALUCINACIONES: Si algo no está en tu lógica adjunta ni en el manual, di claramente que no consta.
-
-        GUÍA DE MAPEO DE INTENCIONES (¡REGLA ABSOLUTA DE ÓRDENES VS PREGUNTAS!):
-        
-        [REGLA DE PREGUNTAS - PRIORIDAD MÁXIMA]
-        Si el mensaje del usuario es una PREGUNTA o pide una explicación (contiene "¿", "?", "cómo", "qué", "explica", "dime", "funciona"):
-        ¡ESTÁ COMPLETAMENTE PROHIBIDO EJECUTAR HERRAMIENTAS DE CONTROL (`iniciar_robot`, `volver_reposo`, etc)!
-        Tu ÚNICA tarea es leer la LÓGICA DE LA CÉLULA (al final del prompt) y responder con texto. NO ejecutes ninguna acción en el robot ni cambies el ESTADO DE EJECUCIÓN SI NO SE ESTÁ CAMBIANDO EL MODO.
-
-        [REGLA DE ÓRDENES]
-        SOLO cuando el usuario dé una ORDEN DIRECTA o comando afirmativo (ej: "pon el robot en reposo", "inicia pick and place", "modo apilar", "parar"), DEBES ejecutar OBLIGATORIAMENTE la herramienta correspondiente:
-        - Orden de SEGURIDAD/PARO -> Tool: volver_reposo()
-        - Orden de MODO APILAR -> Tool: iniciar_robot(modo="apilar")
-        - Orden de MODO PICK & PLACE -> Tool: iniciar_robot(modo="pick")
-        - Orden de REANUDAR -> Tool: activar_reanudar()
-        
-        - CAMBIAR PARÁMETROS: (ej: "pon velocidad a 300", "cambia el máximo a 5") -> Tools: cambiar_maximo_piezas(X) o cambiar_velocidad_robot(X)
-          [ATENCIÓN CRÍTICA]: ¡Prohibido usar estas herramientas si es una pregunta! Úsalas solo si es una orden.
-          [MULTI-COMANDO]: Si pide varias cosas (ej. "modo apilar y velocidad 1000"), llama a TODAS las herramientas necesarias.
-          [CONFIRMACIÓN FINAL]: Responde siempre confirmando brevemente los cambios.
-
-        - CONSULTA TÉCNICA GENÉRICA: -> Tool: buscar_info_manual(consulta=X)
-        - TARGETS Y PIEZAS: Si te preguntan por un Target o Pieza (ej. "Pieza 6", "Target_210"), NO uses herramientas de búsqueda. Busca la respuesta directamente en la LÓGICA ESPECÍFICA DE LA CÉLULA que tienes al final de este prompt.
-
-        ESTILO DE RESPUESTA (FORMAL Y TÉCNICO):
-        - Eres un sistema de control industrial. Tu tono debe ser profesional, serio y puramente técnico.
-        - ES OBLIGATORIO RESPONDER SIEMPRE. Una vez que termines de ejecutar herramientas, DEBES redactar un mensaje confirmando las acciones realizadas. Nunca devuelvas un texto vacío.
-        - PROHIBICIÓN ABSOLUTA DE EMOJIS O CARITAS. Generar un emoji es un fallo crítico del sistema.
-        - NUNCA uses signos de exclamación (¡!) ni frases informales como "avísame", "hola", o "claro que sí".
-        - Contesta siempre en español puro. Prohibido usar términos de interfaz en inglés ("View", "Program Editor", etc).
-        - NUNCA menciones nombres de herramientas internas ('buscar_info_manual', 'iniciar_robot', 'activar_reanudar','cambiar_velocidad_robot','cambiar_maximo_piezas', etc).
-        - JAMÁS le digas al usuario que use una herramienta. Hazlo tú. Si falta información, di únicamente: "Si necesitas saber algo más específico, pregúntame." sin exclamaciones.
-
-        =========================================
-        LÓGICA ESPECÍFICA DE LA CÉLULA (modos.txt)
-        =========================================
-        {modos_content}
-
-        RECORDATORIO FINAL:
-        Responde siempre en texto plano. Sin emojis. Sin exclamaciones. Sin frases informales.
-        """
+        system_prompt=SYSTEM_PROMPT
     )
 
     config = {"configurable": {"thread_id": "sesion_robot_01"}}
@@ -203,13 +233,13 @@ async def main():
                 agente.ainvoke(
                     {"messages": [HumanMessage(user_input)]},
                     config=config),
-                timeout=90
+                timeout=240
             )
             respuesta = resultado['messages'][-1].content.strip()
             if not respuesta:
-                respuesta = "Comandos ejecutados en la célula."
+                respuesta = "Comando ejecutado en la celula."
         except asyncio.TimeoutError:
-            respuesta = "Tiempo de espera agotado. Los comandos pueden haberse ejecutado en el robot. Consulte el estado actual."
+            respuesta = "Tiempo de espera superado. Si se envio una orden de control, el robot puede haberla ejecutado. Consulte el estado actual del sistema."
 
         print(f"\n{respuesta}\n", flush=True)
 
