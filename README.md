@@ -43,7 +43,6 @@ proyecto/
 ├── manual.txt                   # Documento RAG: manual genérico de RobotStudio
 ├── RobotStudio_PackAndGo.rspag  # Estación RobotStudio exportada (Pack & Go)
 ├── requirements.txt
-└── .env.example
 ```
 
 ---
