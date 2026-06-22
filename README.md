@@ -164,7 +164,3 @@ Navegar a `http://localhost:8080` en el navegador.
 ```
 
 ---
-
-## Licencia
-
-MIT
