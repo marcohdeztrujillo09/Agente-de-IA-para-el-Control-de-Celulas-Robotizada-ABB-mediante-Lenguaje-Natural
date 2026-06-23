@@ -34,6 +34,7 @@ El sistema se divide en cuatro capas bien diferenciadas:
 proyecto/
 ├── AgenteRagRobos.py            # Agente LangChain: lógica, RAG y tools
 ├── robostudioMCP.py             # Servidor MCP: herramientas de control del robot
+├── assets                       # Capturas y demo del proyecto
 ├── web/
 │   ├── main.py                  # API FastAPI: puente entre frontend y agente
 │   └── static/                  # Frontend React compilado
