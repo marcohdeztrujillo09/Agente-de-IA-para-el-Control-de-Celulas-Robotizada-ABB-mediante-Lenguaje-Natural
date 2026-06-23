@@ -1,13 +1,8 @@
 ## 📸 Capturas del sistema
 
-<p align="center">
-  <img src="assets/screenshots/screenshots1.png" width="300"/>
-  <img src="assets/screenshots/screenshots2.png" width="300"/>
-  <img src="assets/screenshots/screenshots3.png" width="300"/>
-</p>
-
-<p align="center">
-  <img src="assets/screenshots/screenshots4.png" width="300"/>
-  <img src="assets/screenshots/screenshots5.png" width="300"/>
-  <img src="assets/screenshots/screenshots6.png" width="300"/>
-</p>
+![Screenshot 1](assets/screenshots/screenshots1.png)
+![Screenshot 2](assets/screenshots/screenshots2.png)
+![Screenshot 3](assets/screenshots/screenshots3.png)
+![Screenshot 4](assets/screenshots/screenshots4.png)
+![Screenshot 5](assets/screenshots/screenshots5.png)
+![Screenshot 6](assets/screenshots/screenshots6.png)
