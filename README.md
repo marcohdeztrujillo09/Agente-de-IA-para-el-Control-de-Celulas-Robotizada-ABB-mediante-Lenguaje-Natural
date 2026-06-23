@@ -38,7 +38,6 @@ proyecto/
 │   ├── main.py                  # API FastAPI: puente entre frontend y agente
 │   └── static/                  # Frontend React compilado
 │       ├── index.html
-│       └── assets/
 ├── modos.txt                    # Documento RAG: lógica de modos de la célula
 ├── manual.txt                   # Documento RAG: manual genérico de RobotStudio
 ├── RobotStudio_PackAndGo.rspag  # Estación RobotStudio exportada (Pack & Go)
