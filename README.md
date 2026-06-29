@@ -158,6 +158,7 @@ Navegar a `http://localhost:8080` en el navegador.
 ```
 > Pon el robot en modo apilar con un máximo de 5 cajas a 800 mm/s
 > Para el robot
+> Velocidad 700 y máximo apilar 7 cajas
 > ¿Qué hace el modo pick and place?
 > Reanuda la operación
 ```
